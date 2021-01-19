@@ -1,0 +1,613 @@
+using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Data.SqlClient;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using issue_tracker_2.Models;
+
+namespace issue_tracker_2.Controllers
+{
+    public class TasksController : Controller
+    {
+        public IActionResult TasksGrid(string Filter)
+        {
+            if (HttpContext.Session.GetInt32("UserID") != null)
+            {
+
+
+                IssuesGridViewInfo Issueslist = new IssuesGridViewInfo();
+                SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+                sqlcon.Open();
+                SqlCommand sqlcom = new SqlCommand();
+                if (Filter == "UrgentTasks")
+                {
+                    sqlcom = new SqlCommand("select * from issues where issuepriority='URGENT'", sqlcon);
+
+                }
+                else if (Filter == "ActiveTasks")
+                {
+                    sqlcom = new SqlCommand("select * from issues where issuestatus='ACTIVE'", sqlcon);
+
+                }
+                else if (Filter == "CreatorIsUser")
+                {
+                    sqlcom = new SqlCommand("select * from issues where issuecreator=" + HttpContext.Session.GetInt32("UserID"), sqlcon);
+
+                }
+                else if (Filter == "MyTasks")
+                {
+                    List<string> arrayoftasks = new List<string>();
+                    arrayoftasks = ReturnAllAssignedTasks(HttpContext.Session.GetInt32("UserID"));
+                    foreach (var issuenumber in arrayoftasks)
+                    {
+                        sqlcom = new SqlCommand("select * from issues where issuenumber='" + issuenumber + "'", sqlcon);
+                        SqlDataReader reader1 = sqlcom.ExecuteReader();
+                        reader1.Read();
+                        Issueslist.IDs.Add(int.Parse(reader1[0].ToString()));
+                        Issueslist.Numbers.Add((reader1[1].ToString()));
+                        Issueslist.Titles.Add((reader1[2].ToString()));
+                        Issueslist.Descriptions.Add((reader1[3].ToString()));
+                        Issueslist.Creators.Add((reader1[4].ToString()));
+                        Issueslist.ReportDates.Add((reader1[5].ToString()));
+                        Issueslist.LastUpdate.Add((reader1[6].ToString()));
+                        Issueslist.Status.Add((reader1[7].ToString()));
+                        Issueslist.Priority.Add((reader1[8].ToString()));
+                        Issueslist.Tags.Add((reader1[9].ToString()));
+                        Issueslist.LinkedTickets.Add((reader1[10].ToString()));
+                        Issueslist.ProtectedState.Add((reader1[11].ToString()));
+                    }
+                    return View(Issueslist);
+
+
+
+                }
+                else
+                {
+                    sqlcom = new SqlCommand("select * from issues", sqlcon);
+
+                }
+                SqlDataReader reader = sqlcom.ExecuteReader();
+                if (reader.HasRows)
+                {
+                    int TotalIndex = 0;
+                    while (reader.Read())
+                    {
+                        Issueslist.IDs.Add(int.Parse(reader[0].ToString()));
+                        Issueslist.Numbers.Add((reader[1].ToString()));
+                        Issueslist.Titles.Add((reader[2].ToString()));
+                        Issueslist.Descriptions.Add((reader[3].ToString()));
+                        Issueslist.Creators.Add((reader[4].ToString()));
+                        Issueslist.ReportDates.Add((reader[5].ToString()));
+                        Issueslist.LastUpdate.Add((reader[6].ToString()));
+                        Issueslist.Status.Add((reader[7].ToString()));
+                        Issueslist.Priority.Add((reader[8].ToString()));
+                        Issueslist.Tags.Add((reader[9].ToString()));
+                        Issueslist.LinkedTickets.Add((reader[10].ToString()));
+                        Issueslist.ProtectedState.Add((reader[11].ToString()));
+                        TotalIndex++;
+                    }
+                    reader.Close();
+
+                }
+                sqlcon.Close();
+
+                return View(Issueslist);
+            }
+            else
+            {
+                return RedirectToAction("PageNotFound");
+            }
+        }
+
+        public IActionResult ViewIssue(string IssueNumber)
+        {
+            if (HttpContext.Session.GetInt32("UserID") != null)
+            {
+                SelectedIssue Issue = new SelectedIssue();
+                Issue = FetchTaskInfo(IssueNumber);
+
+                return View(Issue);
+            }
+            else
+            {
+                return RedirectToAction("PageNotFound");
+            }
+        }
+
+        public IActionResult Forms(string GetTask)
+        {
+            if (HttpContext.Session.GetInt32("UserID") != null)
+            {
+                if (string.IsNullOrEmpty(GetTask) == false)
+                {
+                    List<int> Assignedusers = ReturnAllAssignedUsers(GetTask);
+                    bool Isallowed = false;
+                    foreach(var personid in Assignedusers)
+                    {
+                        if(personid==HttpContext.Session.GetInt32("UserID"))
+                        {
+                            Isallowed = true;
+                            break;
+                        }
+                    }
+                    if(Isallowed==true || HttpContext.Session.GetInt32("UserAuthority")<=1)
+                    {
+                        SelectedIssue selectedtask = new SelectedIssue();
+                        selectedtask = FetchTaskInfo(GetTask);
+                        TempData["FormType"] = "Edit";
+                        return View(selectedtask);
+                    }
+                    else
+                    {
+                        SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+                        sqlcon.Open();
+                        SqlCommand sqlcom = new SqlCommand("select issuecreator from issues where issuenumber='" + GetTask + "'", sqlcon);
+                        SqlDataReader reader = sqlcom.ExecuteReader();
+                        reader.Read();
+                        if (reader[0].ToString() == HttpContext.Session.GetInt32("UserID").ToString())
+                        {
+                            Isallowed = true;
+                        }
+                        reader.Close();
+                        sqlcon.Close();
+                        if(Isallowed==true)
+                        {
+                            SelectedIssue selectedtask = new SelectedIssue();
+                            selectedtask = FetchTaskInfo(GetTask);
+                            TempData["FormType"] = "Edit";
+                            return View(selectedtask);
+                        }
+                        else
+                        {
+                            return RedirectToAction("PageNotFound");
+
+                        }
+                    }
+                    
+
+
+                }
+                else
+                {
+                    TempData["FormType"] = "Add";
+                    return View();
+                }
+            }
+            else
+            {
+                return RedirectToAction("PageNotFound");
+            }
+        }
+
+        public IActionResult SetIssueActive(string IssueNumber)
+        {
+            IssueUpdated(IssueNumber);
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom= new SqlCommand("update issues set issuestatus='ACTIVE' where issuenumber='"+IssueNumber+"'", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            sqlcon.Close();
+            return RedirectToAction("TasksGrid", "Tasks");
+        } //idk
+        public IActionResult CloseIssue(string IssueNumber)
+        {
+            IssueUpdated(IssueNumber);
+            CloseThisTask(IssueNumber);
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            SqlCommand sqlcom = new SqlCommand("update issues set issuenotes='This task has been closed. There are no other updates on it, if you think this is a mistake report to the administrator' where issuenumber='" + IssueNumber + "'", sqlcon);
+            sqlcon.Open();
+            sqlcom.ExecuteNonQuery();
+            sqlcon.Close();
+            return RedirectToAction("ViewIssue", new { IssueNumber=IssueNumber});
+        } //just closes it meaning its not finished 
+        public IActionResult PauseIssue(string IssueNumber)
+        {
+            IssueUpdated(IssueNumber);
+
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("select * from issues where issuenumber='" + IssueNumber + "'", sqlcon);
+            SqlDataReader reader = sqlcom.ExecuteReader();
+            reader.Read();
+            string status = reader[7].ToString();
+            if (status=="PENDING")
+            {
+                List<int> assigedusers = ReturnAllAssignedUsers(IssueNumber);
+                foreach (var person in assigedusers)
+                {
+                    SendAuthorizedMessages(1, person, "You can sit back for a while!(Your task was paused)", "You will have your access back on Task No" + IssueNumber + " when a manager unpauses this task.", "SYSTEM");
+
+                }
+            }
+            reader.Close();
+            sqlcom = new SqlCommand("update issues set issuestatus='PAUSED' where issuenumber='" + IssueNumber + "'", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            sqlcon.Close();
+            return RedirectToAction("ViewIssue", new { IssueNumber = IssueNumber });
+        } //pauses 
+
+        public IActionResult UnpauseIssue(string IssueNumber)
+        {
+            IssueUpdated(IssueNumber);
+            
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("select * from assignments where Assignmenttasknumber='"+IssueNumber+"'",sqlcon);
+            SqlDataReader reader = sqlcom.ExecuteReader();
+            if(reader.HasRows)
+            {
+                List<int> assigedusers = ReturnAllAssignedUsers(IssueNumber);
+                foreach(var person in assigedusers)
+                {
+                    SendAuthorizedMessages(1, person, "You are back on track! (Your task was unpaused)", "You have your access back on Task No"+IssueNumber+". This task is still pending.", "SYSTEM");
+
+                }
+                sqlcom = new SqlCommand("update issues set issuestatus='PENDING' where issuenumber='" + IssueNumber + "'", sqlcon);
+
+            }
+            else
+            {
+                sqlcom = new SqlCommand("update issues set issuestatus='ACTIVE' where issuenumber='" + IssueNumber + "'", sqlcon);
+
+            }
+            reader.Close();
+            sqlcom.ExecuteNonQuery();
+            sqlcon.Close();
+            return RedirectToAction("ViewIssue", new { IssueNumber = IssueNumber });
+        } //pauses 
+
+        public IActionResult ClearPausedIssue(string IssueNumber)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand();
+            sqlcom = new SqlCommand("delete from assignments where Assignmenttasknumber='" + IssueNumber + "'", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            sqlcon.Close();
+            return RedirectToAction("ViewIssue", new { IssueNumber = IssueNumber });
+        }
+        public IActionResult ReOpenIssue(string IssueNumber)
+        {
+            IssueUpdated(IssueNumber);
+
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            string issuenotes = "This task was reopended on " + GetDate()+".";
+            SqlCommand sqlcom = new SqlCommand("update issues set issuestatus='ACTIVE',issuenotes='"+issuenotes+"' where issuenumber='" + IssueNumber + "'", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            sqlcom = new SqlCommand("delete from assignments where Assignmenttasknumber='" + IssueNumber + "'", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            sqlcon.Close();
+            return RedirectToAction("ViewIssue", new { IssueNumber = IssueNumber });
+        } //onceits finishe this re opens it with those assigned users in place
+
+        public IActionResult TaskTakenByUser(string IssueNumber)
+        {
+            IssueUpdated(IssueNumber);
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("update issues set issuestatus='PENDING' where issuenumber='"+IssueNumber+"'", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            int? userid = HttpContext.Session.GetInt32("UserID");
+            sqlcom = new SqlCommand("insert into assignments(Assignmenttasknumber,Assignmentuserassigned) values('" + IssueNumber + "',"+userid+")", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            sqlcon.Close();
+            return RedirectToAction("ViewIssue", new { IssueNumber = IssueNumber });
+        } //take a task 
+        public void IssueUpdated(string IssueNumber)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("update issues set issuelastupdate='" + GetDate() + "' where issuenumber='" + IssueNumber + "'", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            sqlcon.Close();
+        } //update
+        public void CloseThisTask(string IssueNumber)
+        {
+            IssueUpdated(IssueNumber);
+
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("update issues set issuestatus='CLOSED' where issuenumber='" + IssueNumber + "'", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            sqlcon.Close();
+        } //VOID to set that number to closed
+
+        public IActionResult ReportIssue(string IssueNumber,string CreatorID)
+        {
+            int? userid = HttpContext.Session.GetInt32("UserID");
+            string message = $"Task {IssueNumber} was reported by {HttpContext.Session.GetString("UserName")} (UserKey: {userid.ToString()}). You can take actions upon reviewing this task.";
+            //sqlcom = new SqlCommand("insert into messages(messagesender,Messagereceiver,messagetitle,messageinfo,messagestatus,MessageSentdate,messagetype) values(1,"+CreatorID+",'A task created by you was reported','" + message + "','NEW','" + GetDate() + "','SYSTEM')", sqlcon);
+            SendAuthorizedMessages(1, int.Parse(CreatorID), "A task created by you was reported", message, "SYSTEM");
+            TempData["ReportSuccess"] = "True";
+            return RedirectToAction("ViewIssue", new { IssueNumber = IssueNumber });
+        }
+        public IActionResult HelpOnPendingTask(string IssueNumber)
+        {
+
+            int? userid = HttpContext.Session.GetInt32("UserID");
+            string message = $"Assigned user {HttpContext.Session.GetString("UserName")}(UserKey:{userid}) needs help with their task. You can reply to this message. This message was bot generated so you might want to include an explaination in your message.";
+            string title = $"Can you help me with Task no {IssueNumber} please?";
+            //sqlcom = new SqlCommand("insert into messages(messagesender,Messagereceiver,messagetitle,messageinfo,messagestatus,MessageSentdate,messagetype) values("+userid+",1,'"+title+"','" + message + "','NEW','" + GetDate() + "','MESSAGE')", sqlcon);
+            SendAuthorizedMessages(userid, 1, title, message, "MESSAGE");
+            TempData["HelpSuccess"] = "True";
+            return RedirectToAction("ViewIssue", new { IssueNumber = IssueNumber });
+        }
+
+        public IActionResult TaskFinished(string IssueNumber)
+        {
+            CloseThisTask(IssueNumber);
+            List<int> AllAssignedUsers = new List<int>();
+            AllAssignedUsers = ReturnAllAssignedUsers(IssueNumber);
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand();
+            int? userid = HttpContext.Session.GetInt32("UserID");
+            string message = $"Assigned user/manager {HttpContext.Session.GetString("UserName")}(UserKey:{userid}) finished task No {IssueNumber}. If this was a mistake you can reopen this task.(reopening a task clears all assigned users)";
+            string title = $"Good job on finishing your task!";
+            foreach (var person in AllAssignedUsers)
+            {
+                SendAuthorizedMessages(1, person, title, message, "SYSTEM");
+            }
+            sqlcon.Close();
+            return RedirectToAction("ViewIssue", new { IssueNumber = IssueNumber });
+
+        } //finished task
+
+        public void SendAuthorizedMessages(int? sender,int? receiver,string title,string message,string type)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand();
+
+            sqlcom = new SqlCommand("insert into messages(messagesender,Messagereceiver,messagetitle,messageinfo,messagestatus,MessageSentdate,messagetype) values("+sender+"," + receiver + ",'" + title + "','" + message + "','NEW','" + GetDate() + "','"+type+"')", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            sqlcon.Close();
+
+        }
+        public static List<int> ReturnAllAssignedUsers(string IssueNumber)
+        {
+            List<int> assignedusers = new List<int>();
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand();
+            sqlcom = new SqlCommand("select * from assignments where Assignmenttasknumber='" + IssueNumber + "'", sqlcon);
+            SqlDataReader reader = sqlcom.ExecuteReader();
+            if (reader.HasRows)
+            {
+                while (reader.Read())
+                {
+                    assignedusers.Add(int.Parse(reader[2].ToString()));
+                }
+            }
+            return assignedusers;
+        }
+
+        public static List<string> ReturnAllAssignedTasks(int? userdid)
+        {
+            List<string> assignedtasks = new List<string>();
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand();
+            sqlcom = new SqlCommand("select * from assignments where Assignmentuserassigned=" + userdid , sqlcon);
+            SqlDataReader reader = sqlcom.ExecuteReader();
+            if (reader.HasRows)
+            {
+                while (reader.Read())
+                {
+                    assignedtasks.Add(reader[1].ToString());
+                }
+            }
+            return assignedtasks;
+        }
+
+        public IActionResult AddNewTask(SelectedIssue newtask)
+        {
+            try
+            {
+                TempData.Clear();
+
+                if (string.IsNullOrEmpty(newtask.Title) || string.IsNullOrEmpty(newtask.Description))
+                {
+                    TempData["TaskAdded"] = "False";
+                    if (string.IsNullOrEmpty(newtask.Title))
+                    {
+                        TempData["ErrorType"] = "Title";
+
+                    }
+                    if (string.IsNullOrEmpty(newtask.Description))
+                    {
+                        TempData["ErrorType"] = "Description";
+
+                    }
+
+                }
+                else
+                {
+                    SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+                    sqlcon.Open();
+                    string issuenumber = GenerateTaskNumber();
+                    int? userid = HttpContext.Session.GetInt32("UserID");
+                    SqlCommand sqlcom = new SqlCommand("insert into issues(issuenumber,issuetitle,issuedescription,issuecreator,issuereportdate,Issuelastupdate,issuestatus,issuepriority,issuetags,issuelinkedtickets,issueprotected,issuenotes) values('" + issuenumber + "','" + newtask.Title + "','" + newtask.Description + "'," + userid + ",'" + GetDate() + "','" + GetDate() + "','ACTIVE','" + newtask.Priority + "','" + newtask.Tags + "','" + newtask.LinkedTickets + "','FALSE','')", sqlcon);
+                    sqlcom.ExecuteNonQuery();
+                    sqlcon.Close();
+                    TempData["TaskAdded"] = "True";
+                    TempData["TaskNumber"] = issuenumber;
+                }
+
+
+                return RedirectToAction("Forms", "Tasks");
+            }
+            catch
+            {
+                TempData["TaskAdded"] = "False";
+                TempData["ErrorType"] = "Other";
+                return RedirectToAction("Forms", "Tasks");
+
+
+            }
+        }
+
+        public IActionResult EditTask(SelectedIssue CurrentTask,string issuenumber)
+        {
+            try
+            {
+
+
+                TempData.Clear();
+
+                if (string.IsNullOrEmpty(CurrentTask.Title) || string.IsNullOrEmpty(CurrentTask.Description))
+                {
+                    TempData["TaskEdited"] = "False";
+                    if (string.IsNullOrEmpty(CurrentTask.Title))
+                    {
+                        TempData["ErrorType"] = "Title";
+
+                    }
+                    if (string.IsNullOrEmpty(CurrentTask.Description))
+                    {
+                        TempData["ErrorType"] = "Description";
+
+                    }
+
+                }
+                else
+                {
+                    SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+                    sqlcon.Open();
+                    SqlCommand sqlcom = new SqlCommand("update issues set issuetitle='" + CurrentTask.Title + "',issuedescription='" + CurrentTask.Description + "',issuepriority='" + CurrentTask.Priority + "',issuetags='" + CurrentTask.Tags + "',issuelinkedtickets='" + CurrentTask.LinkedTickets + "',issuenotes='"+CurrentTask.notes+"' where issuenumber='" + issuenumber + "'", sqlcon);
+                    sqlcom.ExecuteNonQuery();
+                    TempData["TaskEdited"] = "True";
+                }
+                return RedirectToAction("Forms", new { GetTask = issuenumber });
+            }
+            catch
+            {
+                TempData["TaskEdited"] = "False";
+                TempData["ErrorType"] = "Other";
+                return RedirectToAction("Forms", new { GetTask = issuenumber });
+
+
+
+            }
+        }
+
+        public static string GenerateTaskNumber()
+        {
+            string result = "";
+            Random rand = new Random();
+            int num;
+            while(1>0)
+            {
+                for (int i = 0; i <= 2; i++)
+                {
+                    num = rand.Next(97, 122);
+                    result += ((char)num).ToString().ToUpper();
+                }
+                num = rand.Next(10, 99);
+                result += num.ToString();
+                SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+                sqlcon.Open();
+                SqlCommand sqlcom = new SqlCommand("select * from issues where issuenumber='" + result + "'", sqlcon);
+                SqlDataReader reader = sqlcom.ExecuteReader();
+                if(reader.HasRows==false)
+                {
+                    sqlcon.Close();
+                    break;
+                }
+            }
+            
+
+            return result;
+        }
+
+        public static SelectedIssue FetchTaskInfo(string IssueNumber)
+        {
+            SelectedIssue Issue = new SelectedIssue();
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("select * from issues where issuenumber='" + IssueNumber + "'", sqlcon);
+            SqlDataReader reader = sqlcom.ExecuteReader();
+            reader.Read();
+            Issue.ID = int.Parse(reader[0].ToString());
+            Issue.Number = reader[1].ToString();
+            Issue.Title = reader[2].ToString();
+            Issue.Description = reader[3].ToString();
+            Issue.CreatorID = reader[4].ToString();
+            Issue.ReportDate = reader[5].ToString();
+            Issue.LastUpdate = reader[6].ToString();
+            Issue.Status = reader[7].ToString();
+            Issue.Priority = reader[8].ToString();
+            Issue.Tags = reader[9].ToString();
+            Issue.LinkedTickets = reader[10].ToString();
+            Issue.ProtectedState = reader[11].ToString();
+            Issue.notes = reader[12].ToString();
+
+            reader.Close();
+            sqlcom = new SqlCommand("select username,userlastname from users where userid=" + Issue.CreatorID, sqlcon);
+            reader = sqlcom.ExecuteReader();
+            reader.Read();
+            Issue.Creator = reader[0].ToString() + " " + reader[1].ToString();
+            reader.Close();
+            sqlcon.Close();
+            Issue.AssignedTo = ReturnAllAssignedUsers(IssueNumber);
+            return Issue;
+        }
+        public static string GetDate()
+        {
+            string monthName = "";
+            if (DateTime.Now.Month == 1)
+            {
+                monthName = "Jan";
+            }
+            if (DateTime.Now.Month == 2)
+            {
+                monthName = "Feb";
+            }
+            if (DateTime.Now.Month == 3)
+            {
+                monthName = "Mar";
+            }
+            if (DateTime.Now.Month == 4)
+            {
+                monthName = "Apr";
+            }
+            if (DateTime.Now.Month == 5)
+            {
+                monthName = "May";
+            }
+            if (DateTime.Now.Month == 6)
+            {
+                monthName = "Jun";
+            }
+            if (DateTime.Now.Month == 7)
+            {
+                monthName = "Jul";
+            }
+            if (DateTime.Now.Month == 8)
+            {
+                monthName = "Aug";
+            }
+            if (DateTime.Now.Month == 9)
+            {
+                monthName = "Sep";
+            }
+            if (DateTime.Now.Month == 10)
+            {
+                monthName = "Oct";
+            }
+            if (DateTime.Now.Month == 11)
+            {
+                monthName = "Nov";
+            }
+            if (DateTime.Now.Month == 12)
+            {
+                monthName = "Dec";
+            }
+            return monthName + " " + DateTime.Now.Day;
+        }
+
+    }
+}

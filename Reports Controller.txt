@@ -1,0 +1,146 @@
+using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using issue_tracker_2.Models;
+using System.Data.SqlClient;
+
+namespace issue_tracker_2.Controllers
+{
+    public class Reports : Controller
+    {
+        public IActionResult Charts()
+        {
+            ReportsInfo Reports = new ReportsInfo();
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("select * from issues",sqlcon);
+            SqlDataReader reader = sqlcom.ExecuteReader();
+
+            List<int> ChartByPriority = new List<int>();
+
+            List<string> ChartForPast4Months = GetPast4Months();
+            List<int> ChartForPast4MonthsValues = new List<int>();
+            ChartForPast4MonthsValues = new List<int> { 0, 0, 0, 0 };
+
+
+
+
+            ChartByPriority = new List<int>{0,0,0,0};
+            if(reader.HasRows)
+            {
+                while (reader.Read())
+                {
+                    for(int i=0;i<=3;i++)
+                    {
+                        if(reader[5].ToString().IndexOf(ChartForPast4Months[i])!=-1)
+                        {
+                            ChartForPast4MonthsValues[i] = ChartForPast4MonthsValues[i] + 1;
+                            break;
+                        }
+                    }
+                    ////
+                    ///
+                    if (reader[7].ToString() != "CLOSED")
+                    {
+                        if (reader[8].ToString() == "URGENT")
+                        {
+                            ChartByPriority[0] = ChartByPriority[0] + 1;
+                        }
+                        else if (reader[8].ToString() == "HIGH")
+                        {
+                            ChartByPriority[1] = ChartByPriority[1] + 1;
+                        }
+                        else if (reader[8].ToString() == "MEDIUM")
+                        {
+                            ChartByPriority[2] = ChartByPriority[2] + 1;
+                        }
+                        else if (reader[8].ToString() == "LOW")
+                        {
+                            ChartByPriority[3] = ChartByPriority[3] + 1;
+                        }
+                    }
+                }
+                reader.Close();
+            }
+            Reports.ChartForPriotities = ChartByPriority;
+            Reports.ChartForTimePeriodLabels = ChartForPast4Months;
+            Reports.ChartForTimePeriod = ChartForPast4MonthsValues;
+            sqlcon.Close();
+            return View(Reports);
+        }
+
+        public static List<string> GetPast4Months()
+        {
+            List<string> Months = new List<string>();
+            List<string> Result = new List<string>();
+            Months = new List<string> { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+            string monthName = "";
+            if (DateTime.Now.Month == 1)
+            {
+                monthName = "Jan";
+            }
+            if (DateTime.Now.Month == 2)
+            {
+                monthName = "Feb";
+            }
+            if (DateTime.Now.Month == 3)
+            {
+                monthName = "Mar";
+            }
+            if (DateTime.Now.Month == 4)
+            {
+                monthName = "Apr";
+            }
+            if (DateTime.Now.Month == 5)
+            {
+                monthName = "May";
+            }
+            if (DateTime.Now.Month == 6)
+            {
+                monthName = "Jun";
+            }
+            if (DateTime.Now.Month == 7)
+            {
+                monthName = "Jul";
+            }
+            if (DateTime.Now.Month == 8)
+            {
+                monthName = "Aug";
+            }
+            if (DateTime.Now.Month == 9)
+            {
+                monthName = "Sep";
+            }
+            if (DateTime.Now.Month == 10)
+            {
+                monthName = "Oct";
+            }
+            if (DateTime.Now.Month == 11)
+            {
+                monthName = "Nov";
+            }
+            if (DateTime.Now.Month == 12)
+            {
+                monthName = "Dec";
+            }
+            int index = Months.IndexOf(monthName);
+            if (index == 0)
+            {
+                Result = new List<string> { "Jan", "Dec", "Nov", "Oct" };
+            }
+            else
+            {
+                for (int i = index; i <= index - 3; i++)
+                {
+                    Result.Add(Months[i]);
+
+                }
+            }
+
+            return Result;
+        }
+    }
+}

@@ -1,0 +1,105 @@
+using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using issue_tracker_2.Models;
+using Microsoft.AspNetCore.Http;
+using System.Data.SqlClient;
+
+namespace issue_tracker_2.Controllers
+{
+    public class Overview : Controller
+    {
+        public IActionResult News()
+        {
+            if (HttpContext.Session.GetInt32("UserID") != null)
+            {
+                NewsInfo News = new NewsInfo();
+                SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+                sqlcon.Open();
+
+                SqlCommand sqlcom = new SqlCommand("select * from news where (Newstype='Announcement' and Newsstatus!='CLOSED') or (Newsreceiver='" + HttpContext.Session.GetInt32("UserID") + "' and Newsstatus!='CLOSED')", sqlcon);
+                SqlDataReader reader = sqlcom.ExecuteReader();
+                if (reader.HasRows)
+                {
+                    while (reader.Read())
+                    {
+                        News.NewsId.Add(int.Parse(reader[0].ToString()));
+                        News.NewsTitle.Add(reader[1].ToString());
+                        News.NewsType.Add(reader[2].ToString());
+                        News.NewsStatus.Add(reader[3].ToString());
+                        News.NewsDescription.Add(reader[4].ToString());
+                        News.Newsreceiver.Add(reader[5].ToString());
+                        News.NewsDateSent.Add(reader[6].ToString());
+
+
+                    }
+                }
+                return View(News);
+            }
+            else
+                return RedirectToAction("PageNotFound");
+            
+
+        }
+
+        public IActionResult Controls()
+        {
+            if (HttpContext.Session.GetInt32("UserID") != null && HttpContext.Session.GetInt32("UserAuthority")<=1)
+            {
+                NewsInfo News = new NewsInfo();
+                SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+                sqlcon.Open();
+
+                SqlCommand sqlcom = new SqlCommand("select * from news", sqlcon);
+                SqlDataReader reader = sqlcom.ExecuteReader();
+                if (reader.HasRows)
+                {
+                    while (reader.Read())
+                    {
+                        News.NewsId.Add(int.Parse(reader[0].ToString()));
+                        News.NewsTitle.Add(reader[1].ToString());
+                        News.NewsType.Add(reader[2].ToString());
+                        News.NewsStatus.Add(reader[3].ToString());
+                        News.NewsDescription.Add(reader[4].ToString());
+                        News.Newsreceiver.Add(reader[5].ToString());
+                        News.NewsDateSent.Add(reader[6].ToString());
+
+
+                    }
+                }
+                return View(News);
+            }
+            else
+                return RedirectToAction("PageNotFound");
+        }
+
+        public IActionResult NewAnnouncement()
+        {
+            return View();
+        }
+
+        public IActionResult ChangeNewsStatus(string Role, int ID)
+        {
+
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand();
+
+            if (Role == "DELETE")
+            {
+                sqlcom = new SqlCommand("delete from News where Newsid=" + ID, sqlcon);
+            }
+            else
+            {
+                sqlcom = new SqlCommand("Update News set Newsstatus='" + Role + "' where Newsid=" + ID, sqlcon);
+
+            }
+            sqlcom.ExecuteNonQuery();
+            return RedirectToAction("Controls", "Overview");
+        
+        }
+
+    }
+}

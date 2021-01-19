@@ -1,0 +1,190 @@
+using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using issue_tracker_2.Models;
+using Microsoft.AspNetCore.Http;
+
+using System.Data.SqlClient;
+using System.Data;
+
+namespace issue_tracker_2.Controllers
+{
+    public class DashboardController : Controller
+    {
+        public IActionResult Userpanel()
+        {
+            if (HttpContext.Session.GetInt32("UserID") != null)
+            {
+                Loggedinuserinfo Loggedinuserinfo = new Loggedinuserinfo();
+                Loggedinuserinfo.LoggedinUserID = HttpContext.Session.GetInt32("UserID");
+
+                SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+                sqlcon.Open();
+                SqlCommand sqlcom = new SqlCommand("select * from users where userid=" + HttpContext.Session.GetInt32("UserID"), sqlcon);
+                SqlDataReader reader = sqlcom.ExecuteReader();
+                reader.Read();
+                Loggedinuserinfo.LoggedinUserUsername = reader[1].ToString();
+                Loggedinuserinfo.LoggedinUserName = reader[3].ToString();
+                Loggedinuserinfo.LoggedinUserLastname = reader[4].ToString();
+                Loggedinuserinfo.LoggedinUserAuthority = int.Parse(reader[6].ToString());
+                reader.Close();
+               
+                //----
+                TempData["UserNewNotifications"] = GetTotalMessagesForUser(Loggedinuserinfo.LoggedinUserID).ToString();
+
+                //----
+                sqlcom = new SqlCommand("select * from assignments where Assignmentuserassigned=" + HttpContext.Session.GetInt32("UserID"), sqlcon);
+                reader = sqlcom.ExecuteReader();
+                int index = 0;
+                if (reader.HasRows)
+                {
+                    while (reader.Read())
+                    {
+                        index++;
+                    }
+                }
+                //----
+                TempData["UserPendingTasks"] = index.ToString();
+
+                //----
+                reader.Close();
+
+
+                sqlcon.Close();
+
+                return View(Loggedinuserinfo);
+                
+
+            }
+            else
+            {
+                return RedirectToAction("PageNotFound", "Home");
+            }
+        }
+
+        public static int GetTotalMessagesForUser(int? UserID)
+        {
+            int result=0;
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("select * from messages where Messagereceiver=" + UserID + " and (messagestatus='NEW' or messagestatus='MARKED')", sqlcon);
+            SqlDataReader reader = sqlcom.ExecuteReader();
+            DataTable dt = new DataTable();
+            dt.Load(reader);
+            result = dt.Rows.Count;
+            reader.Close();
+
+            sqlcon.Close();
+            return result;
+        }
+        public IActionResult Myprofile()
+        {
+            if (HttpContext.Session.GetInt32("UserID") != null)
+            {
+
+                Myprofileinfo myprofileinfo = new Myprofileinfo();
+                myprofileinfo.Userid = HttpContext.Session.GetInt32("UserID");
+
+                SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+                sqlcon.Open();
+                SqlCommand sqlcom = new SqlCommand("select * from users where userid=" + HttpContext.Session.GetInt32("UserID"), sqlcon);
+                SqlDataReader reader = sqlcom.ExecuteReader();
+                reader.Read();
+                myprofileinfo.Userusername = reader[1].ToString();
+                myprofileinfo.Userpassword = reader[2].ToString();
+                myprofileinfo.UserName = reader[3].ToString();
+                myprofileinfo.Userlastname = reader[4].ToString();
+                myprofileinfo.Userauthority = int.Parse(reader[6].ToString());
+                sqlcon.Close();
+                return View(myprofileinfo);
+            }
+            else
+            {
+                return RedirectToAction("PageNotFound", "Home");
+            }
+        }
+
+
+
+
+        public IActionResult Resetpassword()
+        {
+            if (HttpContext.Session.GetInt32("UserID") != null)
+            {
+
+                Resetpasswordinfo passinfo = new Resetpasswordinfo();
+
+                SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+                sqlcon.Open();
+                SqlCommand sqlcom = new SqlCommand("select * from users where userid=" + HttpContext.Session.GetInt32("UserID"), sqlcon);
+                SqlDataReader reader = sqlcom.ExecuteReader();
+                reader.Read();
+                passinfo.Userpassword = reader[2].ToString();
+
+                sqlcon.Close();
+                return View(passinfo);
+            }
+            else
+            {
+                return RedirectToAction("PageNotFound", "Home");
+            }
+        }
+
+        //In-App functions:
+
+        public IActionResult MakeChangesToProfile(Myprofileinfo myprofileinfo)
+        {
+            myprofileinfo.Userid = HttpContext.Session.GetInt32("UserID");
+
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            SqlCommand sqlcom = new SqlCommand("update users set userusername='"+ myprofileinfo.Userusername+ "', username='"+ myprofileinfo.UserName +"', userlastname='"+myprofileinfo.Userlastname+"' where userid="+myprofileinfo.Userid,sqlcon);
+            sqlcon.Open();
+            sqlcom.ExecuteNonQuery();
+            TempData["Profilechange"] = "Done";
+            sqlcon.Close();
+            HttpContext.Session.SetString("UserName",myprofileinfo.UserName);
+            //HttpContext.Session.SetInt32("UserID", myprofileinfo.Userid);
+            return RedirectToAction("Myprofile", "Dashboard");
+        }
+
+        public IActionResult VerifyPassword(Resetpasswordinfo passinfo)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("select * from users where userid="+HttpContext.Session.GetInt32("UserID"),sqlcon);
+            SqlDataReader reader = sqlcom.ExecuteReader();
+            reader.Read();
+            if(reader[2].ToString()==passinfo.Userpassword)
+            {
+                TempData["Status"] = "PassConfirmed";
+            }
+            else
+            {
+                TempData["Status"] = "PassInvalid";
+
+            }
+
+            sqlcon.Close();
+            
+            return RedirectToAction("Resetpassword", "Dashboard");
+        }
+
+        public IActionResult SetNewPass(Resetpasswordinfo passinfo)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("update users set userpassword='"+passinfo.Changepasswordto+"' where userid=" + HttpContext.Session.GetInt32("UserID"), sqlcon);
+            sqlcom.ExecuteNonQuery();
+            TempData["Status"] = "PassChanged";
+
+
+
+            sqlcon.Close();
+
+            return RedirectToAction("Resetpassword", "Dashboard");
+        }
+
+    }
+}

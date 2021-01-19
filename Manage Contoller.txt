@@ -1,0 +1,372 @@
+using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Data.SqlClient;
+using issue_tracker_2.Models;
+using Microsoft.AspNetCore.Http;
+
+namespace issue_tracker_2.Controllers
+{
+    public class ManageController : Controller
+    {
+        public IActionResult Members(string Username, string Filter)
+        {
+            AllUsersInfo UsersInfo = new AllUsersInfo();
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True;MultipleActiveResultSets=true");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand();
+            if (Username!=null)
+            {
+                UsersInfo.DataType = "User";
+                sqlcom = new SqlCommand("select * from users where userusername='"+Username+"'", sqlcon);
+
+            }
+            else
+            {
+                UsersInfo.DataType = "AllUsers";
+                if (Filter == "Administrators")
+                {
+                    sqlcom = new SqlCommand("select * from users where userauthority='1' or userauthority='0'", sqlcon);
+                }
+                else if (Filter == "Members")
+                {
+                    sqlcom = new SqlCommand("select * from users where userauthority='3'", sqlcon);
+
+                }
+                else if (Filter == "Managers")
+                {
+                    sqlcom = new SqlCommand("select * from users where userauthority='2'", sqlcon);
+
+                }
+                else if(Filter== "NoPending")
+                {
+                    sqlcom = new SqlCommand("select * from Assignments", sqlcon);
+                    SqlDataReader reader1 = sqlcom.ExecuteReader();
+                    while(reader1.Read())
+                    {
+
+                    }
+                }
+                else
+                {
+                    sqlcom = new SqlCommand("select * from users", sqlcon);
+                }
+
+            }
+            SqlDataReader reader = sqlcom.ExecuteReader();
+            if(reader.HasRows)
+            {
+                while(reader.Read())
+                {
+                    int userid = int.Parse(reader[0].ToString());
+                    
+                    UsersInfo.IDs.Add(userid);
+
+                    UsersInfo.Usernames.Add(reader[1].ToString());
+                    UsersInfo.Names.Add(reader[3].ToString());
+                    UsersInfo.Lastnames.Add(reader[4].ToString());
+                    UsersInfo.Status.Add(reader[5].ToString());
+                    if(reader[6].ToString()=="0")
+                    {
+                        UsersInfo.Authority.Add("*Administrator*");
+
+                    }
+                    if (reader[6].ToString() == "1")
+                    {
+                        UsersInfo.Authority.Add("Administrator");
+
+                    }
+                    if (reader[6].ToString() == "2")
+                    {
+                        UsersInfo.Authority.Add("Manager");
+
+                    }
+                    if (reader[6].ToString() == "3")
+                    {
+                        UsersInfo.Authority.Add("Member");
+
+                    }
+
+
+
+                }
+                reader.Close();
+                sqlcon.Close();
+                SetPendingTasksInfo(UsersInfo);
+               
+                
+            }
+            //maintenance mode
+            sqlcon.Open();
+            sqlcom = new SqlCommand("select useractivestatus from users", sqlcon);
+            reader = sqlcom.ExecuteReader();
+            if(reader.HasRows)
+            {
+                bool IsMaintenanceOn = false;
+                while(reader.Read())
+                {
+                    if (reader[0].ToString().IndexOf("Maintenance") == 0)
+                    {
+                        IsMaintenanceOn = true;
+                        break;
+                    }
+                }
+                if(IsMaintenanceOn==true)
+                {
+                    UsersInfo.MaintenanceMode = "ON";
+
+                }
+                else
+                {
+                    UsersInfo.MaintenanceMode = "OFF";
+
+                }
+                reader.Close();
+
+            }
+            sqlcon.Close();
+            return View(UsersInfo);
+        }
+        public void SetPendingTasksInfo(AllUsersInfo UsersInfo)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True;MultipleActiveResultSets=true");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("select * from users where userauthority!=0", sqlcon);
+            SqlDataReader reader;
+            for (int i = 0; i < UsersInfo.IDs.Count; i++)
+            {
+                int userid = UsersInfo.IDs[i];
+                string AllPendings = "";
+                sqlcom = new SqlCommand("select * from assignments where Assignmentuserassigned=" + userid, sqlcon);
+                reader = sqlcom.ExecuteReader();
+                if (reader.HasRows)
+                {
+                    int index = 0;
+                    while (reader.Read())
+                    {
+                        AllPendings += reader[1].ToString();
+                        AllPendings += "-";
+                        index++;
+                    }
+                    reader.Close();
+                    UsersInfo.PendingTasksCount.Add(index);
+                }
+                else
+                {
+                    UsersInfo.PendingTasksCount.Add(0);
+
+                }
+                UsersInfo.PendingTasks.Add(AllPendings);
+            }
+        }
+
+        public IActionResult LockUser(string username)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True;MultipleActiveResultSets=true");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("update users set useractivestatus='LOCKED' where userusername='" + username+"'", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            return RedirectToAction("Members", new { Username = username });
+        }
+
+        public IActionResult ActivateUser(string username)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True;MultipleActiveResultSets=true");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("update users set useractivestatus='ACTIVE' where userusername='" + username + "'", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            return RedirectToAction("Members", new { Username = username });
+        }
+
+        public IActionResult AssignTask(string tasknumber,string userid,string username)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True;MultipleActiveResultSets=true");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand();
+            if (string.IsNullOrEmpty(tasknumber))
+            {
+                TempData["AssignmentFailed"] = "Task Number can not be empty";
+                return RedirectToAction("Members", new { Username = username });
+            }
+            else
+            {
+                sqlcom = new SqlCommand("select * from issues where issuenumber='" + tasknumber + "'", sqlcon);
+                SqlDataReader reader = sqlcom.ExecuteReader();
+                if (reader.HasRows)
+                {
+                    reader.Close();
+                    sqlcom = new SqlCommand("select Assignmentuserassigned from Assignments where Assignmenttasknumber='" + tasknumber + "'", sqlcon);
+                    reader = sqlcom.ExecuteReader();
+                    bool isassigned = false;
+                    while(reader.Read())
+                    {
+                        if(reader[0].ToString()==userid)
+                        {
+                            isassigned = true;
+                            break;
+                        }
+                    }
+                    reader.Close();
+                    if(isassigned==true)
+                    {
+                        TempData["AssignmentFailed"] = $"Task No {tasknumber} is already assigned to this user";
+                        return RedirectToAction("Members", new { Username = username });
+                    }
+                    else
+                    {
+                        sqlcom = new SqlCommand("update Issues set Issuestatus='PENDING' where IssueNumber='" + tasknumber + "'", sqlcon);
+                        sqlcom.ExecuteNonQuery();
+                        sqlcom = new SqlCommand("insert into Assignments(Assignmenttasknumber,Assignmentuserassigned) values('" + tasknumber + "'," + userid + ")", sqlcon);
+                        sqlcom.ExecuteNonQuery();
+                        sqlcon.Close();
+                        SendAuthorizedMessages(HttpContext.Session.GetInt32("UserID"), int.Parse(userid), $"You have a new assigned task! Task No: {tasknumber}", "Hi there! I have assigned you a new task. Let me know if you have any questions. This message was generated by a bot, you can reply to it though.", "MESSAGE");
+                        return RedirectToAction("Members", new { Username = username });
+                    }
+                }
+                else
+                {
+                    TempData["AssignmentFailed"] = "Task Not Found";
+                    return RedirectToAction("Members", new { Username = username });
+
+                }
+            }
+          
+            
+        }
+        public IActionResult PromoteUser(string username,string authority)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True;MultipleActiveResultSets=true");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand("update users set userauthority='"+authority+"' where userusername='"+username+"'", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            return RedirectToAction("Members", new { Username = username });
+        }
+
+        public void SendAuthorizedMessages(int? sender, int? receiver, string title, string message, string type)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand();
+
+            sqlcom = new SqlCommand("insert into messages(messagesender,Messagereceiver,messagetitle,messageinfo,messagestatus,MessageSentdate,messagetype) values(" + sender + "," + receiver + ",'" + title + "','" + message + "','NEW','" + GetDate() + "','" + type + "')", sqlcon);
+            sqlcom.ExecuteNonQuery();
+            sqlcon.Close();
+
+        }
+        public static string GetDate()
+        {
+            string monthName = "";
+            if (DateTime.Now.Month == 1)
+            {
+                monthName = "Jan";
+            }
+            if (DateTime.Now.Month == 2)
+            {
+                monthName = "Feb";
+            }
+            if (DateTime.Now.Month == 3)
+            {
+                monthName = "Mar";
+            }
+            if (DateTime.Now.Month == 4)
+            {
+                monthName = "Apr";
+            }
+            if (DateTime.Now.Month == 5)
+            {
+                monthName = "May";
+            }
+            if (DateTime.Now.Month == 6)
+            {
+                monthName = "Jun";
+            }
+            if (DateTime.Now.Month == 7)
+            {
+                monthName = "Jul";
+            }
+            if (DateTime.Now.Month == 8)
+            {
+                monthName = "Aug";
+            }
+            if (DateTime.Now.Month == 9)
+            {
+                monthName = "Sep";
+            }
+            if (DateTime.Now.Month == 10)
+            {
+                monthName = "Oct";
+            }
+            if (DateTime.Now.Month == 11)
+            {
+                monthName = "Nov";
+            }
+            if (DateTime.Now.Month == 12)
+            {
+                monthName = "Dec";
+            }
+            return monthName + " " + DateTime.Now.Day+" "+DateTime.Now.Year;
+        }
+
+        public IActionResult SetMaintenanceMode(string Role)
+        {
+            SqlConnection sqlcon = new SqlConnection("Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True;MultipleActiveResultSets=true");
+            sqlcon.Open();
+            SqlCommand sqlcom = new SqlCommand();
+            SqlDataReader reader;
+            List<string> StatusOfusers = new List<string>();
+            List<int> UserIDs = new List<int>();
+            
+            if (Role=="on")
+            {
+                sqlcom = new SqlCommand("select userid,useractivestatus from users where userauthority!='0' and useractivestatus='ACTIVE'", sqlcon);
+                reader = sqlcom.ExecuteReader();
+                if (reader.HasRows)
+                {
+                    while (reader.Read())
+                    {
+                        UserIDs.Add(int.Parse(reader[0].ToString()));
+                        StatusOfusers.Add(reader[1].ToString());
+                    }
+                }
+                reader.Close();
+
+                for (int i=0;i<UserIDs.Count;i++)
+                {
+                    string newstatus = "Maintenance." + StatusOfusers[i];
+                    sqlcom = new SqlCommand("Update users set useractivestatus='" + newstatus + "' where userid=" + UserIDs[i], sqlcon);
+                    sqlcom.ExecuteNonQuery();
+
+                    
+                }
+            }
+            else
+            {
+                sqlcom = new SqlCommand("select userid,useractivestatus from users where userauthority!='0' and useractivestatus='Maintenance.ACTIVE'", sqlcon);
+                reader = sqlcom.ExecuteReader();
+                if (reader.HasRows)
+                {
+                    while (reader.Read())
+                    {
+                        UserIDs.Add(int.Parse(reader[0].ToString()));
+                        StatusOfusers.Add(reader[1].ToString());
+                    }
+                }
+                reader.Close();
+                for (int i = 0; i < UserIDs.Count; i++)
+                {
+                    sqlcom = new SqlCommand("Update users set useractivestatus='ACTIVE' where userid=" + UserIDs[i], sqlcon);
+                    sqlcom.ExecuteNonQuery();
+
+
+                }
+            }
+            return RedirectToAction("Members", "Manage");
+        }
+
+
+
+
+    }
+}

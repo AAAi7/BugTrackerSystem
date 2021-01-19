@@ -1,0 +1,200 @@
+using issue_tracker_2.Models;
+using Microsoft.AspNetCore.Mvc;
+using System;
+using System.Collections.Generic;
+using System.Data.SqlClient;
+using System.Linq;
+using System.Threading.Tasks;
+using System.Configuration;
+using Microsoft.Extensions.Configuration;
+using Microsoft.AspNetCore.Http;
+
+// THIS IS FOR LOGIN/USERLOGIN
+
+
+namespace issue_tracker_2.Controllers
+{
+    public class LoginController : Controller
+    {
+
+
+        public IActionResult Userlogin()
+        {
+            HttpContext.Session.Clear();
+            return View();
+        }
+        public IActionResult Forgotpassword()
+        {
+            //HttpContext.Session.SetString("Isvalidated", "False");
+
+            Forgotpasswordinfo Vmodel = new Forgotpasswordinfo();
+            //if(Vmodel.Isvalidated==true)
+            //    HttpContext.Session.SetString("Isvalidated", "True");
+
+            return View(Vmodel);
+        }
+        public IActionResult LoginRequest(LoginInfo Logininformation)
+        {
+
+            SqlConnection sqlcon = new SqlConnection();
+            try
+            {
+
+
+                sqlcon.ConnectionString = "Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True";
+                SqlCommand sqlcom = new SqlCommand("");
+                sqlcon.Open();
+                string s = Logininformation.Userusername;
+                sqlcom = new SqlCommand("select * from Users where userusername='" + Logininformation.Userusername + "'", sqlcon);
+                SqlDataReader reader = sqlcom.ExecuteReader();
+                if (reader.HasRows)
+                {
+
+                    reader.Read();
+                    if (reader[5].ToString() == "ACTIVE")
+                    {
+                        if (reader[2].ToString() == Logininformation.Userpassword)
+                        {
+                            Logininformation.UserID = int.Parse(reader[0].ToString());
+                            Logininformation.UserPersonsName = reader[3].ToString();
+                            int authority = int.Parse(reader[6].ToString());
+                            HttpContext.Session.SetInt32("UserID", Logininformation.UserID);
+                            HttpContext.Session.SetInt32("UserAuthority", authority);
+
+                            HttpContext.Session.SetString("UserName", Logininformation.UserPersonsName);
+
+                            return RedirectToAction("Userpanel", "Dashboard");
+                        }
+                        else
+                        {
+                            TempData["Error"] = "Einvalid";
+                            return RedirectToAction("Userlogin", "Login");
+                        }
+                    }
+                    else if (reader[5].ToString() == "LOCKED")
+                    {
+                        Logininformation.UserStatus = "LOCKED";
+                        return View("UserNotAllowed",Logininformation);
+                    }
+                    else if(reader[5].ToString().IndexOf("Maintenance") == 0)
+                    {
+                        Logininformation.UserStatus = "Maintenance";
+                        return View("UserNotAllowed",Logininformation);
+                    }
+                    else
+                    {
+                        return View();
+                    }
+                }
+                else
+                {
+
+                    TempData["Error"] = "Einvalid";
+                    return RedirectToAction("Userlogin", "Login");
+                }
+            }
+            catch (SqlException e)
+            {
+                TempData["Error"] = "Econnection";
+                return RedirectToAction("Userlogin", "Login");
+            }
+            catch 
+            {
+                TempData["Error"] = "Eother";
+                return RedirectToAction("Userlogin", "Login");
+            }
+            finally
+            {
+                sqlcon.Close();
+            }
+        } //User wants to login
+
+
+
+
+        public IActionResult Validateuser(Forgotpasswordinfo Submittedvalues)
+        {
+            SqlConnection sqlcon = new SqlConnection();
+
+            try
+            {
+                sqlcon.ConnectionString = "Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True";
+                SqlCommand sqlcom = new SqlCommand("");
+                sqlcon.Open();
+                sqlcom = new SqlCommand("select * from Users where userid=" + Submittedvalues.UserKey, sqlcon);
+                SqlDataReader reader = sqlcom.ExecuteReader();
+                if (reader.HasRows)
+                {
+
+                    reader.Read();
+                    string fullname;
+                    fullname = reader[3].ToString() + " " + reader[4].ToString();
+                    if (fullname == Submittedvalues.Userfullname)
+                    {
+                        HttpContext.Session.SetString("Isvalidated", "True");
+                        HttpContext.Session.SetInt32("UserID", int.Parse(reader[0].ToString()));
+                        HttpContext.Session.SetString("Usergreetingname", Submittedvalues.Userfullname);
+
+                        return RedirectToAction("Forgotpassword", "Login");
+                    }
+                    else
+                    {
+                        TempData["Error"] = "Einvalid";
+                        return RedirectToAction("Forgotpassword", "Login");
+                    }
+                }
+                else
+                {
+
+                    TempData["Error"] = "Einvalid";
+                    return RedirectToAction("Forgotpassword", "Login");
+
+
+                }
+            }
+            catch
+            {
+                TempData["Error"] = "Einvalid";
+                return RedirectToAction("Forgotpassword", "Login");
+            }
+            finally
+            {
+                sqlcon.Close();
+            }
+
+
+        }
+        public IActionResult Changemypassword(Forgotpasswordinfo Submittedvalues)
+        {
+            SqlConnection sqlcon = new SqlConnection();
+            int? UserID = HttpContext.Session.GetInt32("UserID");
+            try
+            {
+
+
+                sqlcon.ConnectionString = "Data Source=.;Initial Catalog='Issue Tracker 1';Integrated Security=True";
+                SqlCommand sqlcom = new SqlCommand("");
+                sqlcon.Open();
+                sqlcom = new SqlCommand("update users set userpassword='" + Submittedvalues.Usernewpassword + "' where userid=" + UserID, sqlcon);
+                sqlcom.ExecuteNonQuery();
+                HttpContext.Session.SetString("Isvalidated", "Done");
+                
+                return RedirectToAction("Forgotpassword", "Login");
+            }
+            catch
+            {
+                return RedirectToAction("Forgotpassword", "Login");
+            }
+            finally
+            {
+                sqlcon.Close();
+
+            }
+        }
+
+
+
+
+
+    }
+}
